@@ -57,7 +57,6 @@ HELP_MESSAGE = """*Сикомор — духовный собеседник*
 /morning — подписаться на утренние слова (или отписаться)
 /quote — цитата из Писания или Святых Отцов
 /pourout — выговориться без масок и осуждения
-/channel — канал Смоковницы
 /new — очистить историю и начать заново
 /help — это сообщение
 
@@ -95,12 +94,6 @@ async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     quote = get_random_quote()
     text = f"_{quote['text']}_\n\n— {quote['source']}"
     await update.message.reply_text(text, parse_mode="Markdown")
-
-
-async def channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Канал Смоковницы — живые мысли о вере, жизни и смысле. Заходи: https://t.me/sikomornica"
-    )
 
 
 async def pourout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -152,7 +145,6 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("morning", morning_command))
     app.add_handler(CommandHandler("quote", quote_command))
-    app.add_handler(CommandHandler("channel", channel_command))
     app.add_handler(CommandHandler("pourout", pourout_command))
     app.add_handler(CommandHandler("new", new_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -162,7 +154,6 @@ BOT_COMMANDS = [
     BotCommand("morning", "Утренние слова — подписаться / отписаться"),
     BotCommand("quote", "Цитата из Писания или Святых Отцов"),
     BotCommand("pourout", "Выговориться — без масок, без осуждения"),
-    BotCommand("channel", "Канал Смоковницы"),
     BotCommand("new", "Начать разговор заново"),
     BotCommand("help", "Помощь"),
 ]
