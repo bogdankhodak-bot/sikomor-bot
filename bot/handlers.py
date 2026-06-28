@@ -1,5 +1,6 @@
 """Telegram command and message handlers."""
 import logging
+import random
 from telegram import Update, BotCommand
 from telegram.ext import (
     ContextTypes,
@@ -10,10 +11,30 @@ from telegram.ext import (
 )
 from .claude_client import get_reply
 from .storage import add_message, get_history, clear_history
-from .quotes import get_random_quote, get_random_question
+from .quotes import get_random_quote
 from .scheduler import subscribe, unsubscribe, is_subscribed
 
 logger = logging.getLogger(__name__)
+
+_pourout_waiting: set[int] = set()
+
+POUROUT_RESPONSES = [
+    "Я слышал. Это настоящее. Иди.",
+    "Ты сказал это вслух. Это уже много. Иди жить.",
+    "Это нужно было сказать. Ты сказал. Теперь иди.",
+    "Я здесь был. Слышал каждое слово. Иди.",
+    "Ты человек. И это всё — по-человечески. Иди.",
+    "Это честно. Это твоё. Теперь можно выдохнуть.",
+    "Ничего лишнего. Всё настоящее. Иди дальше.",
+    "Хорошо что сказал. Не каждый может. Иди.",
+    "Это было внутри. Теперь снаружи. Стало немного легче — и этого достаточно.",
+    "Я не сужу. Никто здесь не судит. Иди с миром.",
+    "Столько всего. И ты всё равно здесь. Это сила.",
+    "Слова упали — и пусть лежат здесь. Ты иди.",
+    "Это было тяжело нести. Спасибо что доверил. Иди.",
+    "Сказано — значит отпущено. Хоть немного. Иди.",
+    "Ты живой. Это чувствуется. Иди жить.",
+]
 
 WELCOME_MESSAGE = """Привет. Я — Сикомор 🌿
 
@@ -24,7 +45,7 @@ WELCOME_MESSAGE = """Привет. Я — Сикомор 🌿
 *Команды:*
 /morning — включить утренние слова (цитата + размышление каждое утро)
 /quote — получить цитату прямо сейчас
-/question — вопрос для размышления
+/pourout — выговориться без масок и осуждения
 /new — начать разговор заново
 /help — помощь"""
 
@@ -35,7 +56,7 @@ HELP_MESSAGE = """*Сикомор — духовный собеседник*
 *Команды:*
 /morning — подписаться на утренние слова (или отписаться)
 /quote — цитата из Писания или Святых Отцов
-/question — вопрос для вечернего размышления
+/pourout — выговориться без масок и осуждения
 /new — очистить историю и начать заново
 /help — это сообщение"""
 
@@ -72,14 +93,18 @@ async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
-async def question_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    question = get_random_question()
-    await update.message.reply_text(f"💭 {question}")
+async def pourout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    _pourout_waiting.add(user_id)
+    await update.message.reply_text(
+        "Здесь можно сказать всё. Без масок, без осуждения. Просто напиши что внутри — я слушаю."
+    )
 
 
 async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     clear_history(user_id)
+    _pourout_waiting.discard(user_id)
     await update.message.reply_text(
         "Хорошо. Начнём с чистого листа 🌿\n\nО чём хочешь поговорить?"
     )
@@ -88,6 +113,11 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     user_text = update.message.text
+
+    if user_id in _pourout_waiting:
+        _pourout_waiting.discard(user_id)
+        await update.message.reply_text(random.choice(POUROUT_RESPONSES))
+        return
 
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action="typing"
@@ -101,7 +131,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         add_message(user_id, "assistant", reply)
         await update.message.reply_text(reply)
     except Exception as e:
-        logger.error(f"Error getting Gemini reply for user {user_id}: {e}")
+        logger.error(f"Error getting Claude reply for user {user_id}: {e}")
         await update.message.reply_text(
             "Прости, я не смог ответить прямо сейчас. Попробуй ещё раз через минуту."
         )
@@ -112,7 +142,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("morning", morning_command))
     app.add_handler(CommandHandler("quote", quote_command))
-    app.add_handler(CommandHandler("question", question_command))
+    app.add_handler(CommandHandler("pourout", pourout_command))
     app.add_handler(CommandHandler("new", new_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
@@ -120,7 +150,7 @@ def register_handlers(app: Application) -> None:
 BOT_COMMANDS = [
     BotCommand("morning", "Утренние слова — подписаться / отписаться"),
     BotCommand("quote", "Цитата из Писания или Святых Отцов"),
-    BotCommand("question", "Вопрос для размышления"),
+    BotCommand("pourout", "Выговориться — без масок, без осуждения"),
     BotCommand("new", "Начать разговор заново"),
     BotCommand("help", "Помощь"),
 ]
