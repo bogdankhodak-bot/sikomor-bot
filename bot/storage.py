@@ -7,6 +7,7 @@ SESSION_TIMEOUT = 30 * 60  # 30 minutes in seconds
 
 _history: dict[int, list[dict]] = defaultdict(list)
 _last_active: dict[int, float] = {}
+_known_users: set[int] = set()
 
 
 def _check_timeout(user_id: int) -> None:
@@ -34,3 +35,15 @@ def clear_history(user_id: int) -> None:
 
 def get_all_user_ids() -> list[int]:
     return list(_history.keys())
+
+
+def register_user(user_id: int) -> bool:
+    """Register a user. Returns True if this is a new user, False if already known."""
+    if user_id in _known_users:
+        return False
+    _known_users.add(user_id)
+    return True
+
+
+def get_user_count() -> int:
+    return len(_known_users)
