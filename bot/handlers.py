@@ -10,7 +10,7 @@ from telegram.ext import (
     Application,
 )
 from .claude_client import get_reply
-from .storage import add_message, get_history, clear_history
+from .storage import add_message, get_history, clear_history, register_user, get_user_count
 from .quotes import get_random_quote
 from .scheduler import subscribe, unsubscribe, is_subscribed
 
@@ -67,7 +67,17 @@ HELP_MESSAGE = """*Сикомор — духовный собеседник*
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     subscribe(user_id)
+    is_new = register_user(user_id)
     await update.message.reply_text(WELCOME_MESSAGE, parse_mode="Markdown")
+    if is_new:
+        count = get_user_count()
+        try:
+            await context.bot.send_message(
+                chat_id=112052452,
+                text=f"🌿 Новый пользователь! Всего: {count}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify admin: {e}")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
