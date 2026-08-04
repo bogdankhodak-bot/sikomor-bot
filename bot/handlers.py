@@ -10,10 +10,16 @@ from telegram.ext import (
     Application,
 )
 from .claude_client import get_reply
-from .storage import add_message, get_history, clear_history, register_user, get_user_count, subscribe, unsubscribe, is_subscribed
+from .storage import (
+    add_message, get_history, clear_history,
+    register_user, get_user_count,
+    subscribe, unsubscribe, is_subscribed,
+)
 from .quotes import get_random_quote
 
 logger = logging.getLogger(__name__)
+
+ADMIN_ID = 552279910
 
 _pourout_waiting: set[int] = set()
 
@@ -63,28 +69,35 @@ HELP_MESSAGE = """*Сикомор — духовный собеседник*
 💛 Поддержать: https://boosty.to/sikomor/donate"""
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    subscribe(user_id)
+async def _track_user(user_id: int, bot) -> None:
+    """Register the user and notify admin if new."""
     is_new = register_user(user_id)
-    await update.message.reply_text(WELCOME_MESSAGE, parse_mode="Markdown")
     if is_new:
         count = get_user_count()
         try:
-            await context.bot.send_message(
-                chat_id=112052452,
-                text=f"🌿 Новый пользователь! Всего: {count}"
+            await bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🌿 Новый пользователь! Всего: {count}",
             )
         except Exception as e:
-            logger.error(f"Failed to notify admin: {e}")
+            logger.error(f"Failed to notify admin of new user: {e}")
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    subscribe(user_id)
+    await _track_user(user_id, context.bot)
+    await update.message.reply_text(WELCOME_MESSAGE, parse_mode="Markdown")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _track_user(update.effective_user.id, context.bot)
     await update.message.reply_text(HELP_MESSAGE, parse_mode="Markdown")
 
 
 async def morning_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    await _track_user(user_id, context.bot)
     if is_subscribed(user_id):
         unsubscribe(user_id)
         await update.message.reply_text(
@@ -100,6 +113,7 @@ async def morning_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _track_user(update.effective_user.id, context.bot)
     quote = get_random_quote()
     text = f"_{quote['text']}_\n\n— {quote['source']}"
     await update.message.reply_text(text, parse_mode="Markdown")
@@ -107,6 +121,7 @@ async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def pourout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    await _track_user(user_id, context.bot)
     _pourout_waiting.add(user_id)
     await update.message.reply_text(
         "Здесь можно сказать всё. Без масок, без осуждения. Просто напиши что внутри — я слушаю."
@@ -115,6 +130,7 @@ async def pourout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    await _track_user(user_id, context.bot)
     clear_history(user_id)
     _pourout_waiting.discard(user_id)
     await update.message.reply_text(
@@ -125,6 +141,8 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     user_text = update.message.text
+
+    await _track_user(user_id, context.bot)
 
     if user_id in _pourout_waiting:
         _pourout_waiting.discard(user_id)
