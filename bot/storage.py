@@ -1,4 +1,4 @@
-"""Simple in-memory conversation storage with per-user history, plus persistent subscriber store."""
+"""Conversation storage, persistent subscriber store, and persistent user tracking."""
 from collections import defaultdict
 import json
 import logging
@@ -12,9 +12,62 @@ SESSION_TIMEOUT = 30 * 60  # 30 minutes in seconds
 
 _history: dict[int, list[dict]] = defaultdict(list)
 _last_active: dict[int, float] = {}
-_known_users: set[int] = set()
 
-# Persistent subscriber store
+# ── Persistent user store ─────────────────────────────────────────────────────
+_USERS_FILE = "users.json"
+_known_users: set[int] = set()
+_today_new_count: int = 0
+
+
+def _load_users() -> None:
+    global _known_users
+    if os.path.exists(_USERS_FILE):
+        try:
+            with open(_USERS_FILE, "r") as f:
+                data = json.load(f)
+            _known_users = set(data.get("users", []))
+            logger.info(f"Loaded {len(_known_users)} known users from disk")
+        except Exception as e:
+            logger.error(f"Failed to load users: {e}")
+            _known_users = set()
+
+
+def _save_users() -> None:
+    try:
+        with open(_USERS_FILE, "w") as f:
+            json.dump({"users": list(_known_users)}, f)
+    except Exception as e:
+        logger.error(f"Failed to save users: {e}")
+
+
+def register_user(user_id: int) -> bool:
+    """Record a user interaction. Returns True if this is a brand-new user."""
+    global _today_new_count
+    if user_id in _known_users:
+        return False
+    _known_users.add(user_id)
+    _today_new_count += 1
+    _save_users()
+    return True
+
+
+def get_user_count() -> int:
+    return len(_known_users)
+
+
+def get_today_new_count() -> int:
+    return _today_new_count
+
+
+def reset_today_count() -> None:
+    global _today_new_count
+    _today_new_count = 0
+
+
+# Load users at module import time
+_load_users()
+
+# ── Persistent subscriber store ───────────────────────────────────────────────
 _SUBSCRIBERS_FILE = "subscribers.json"
 _subscribers: set[int] = set()
 
@@ -61,6 +114,8 @@ def get_all_subscribers() -> list[int]:
 # Load subscribers at module import time
 _load_subscribers()
 
+# ── Conversation history ──────────────────────────────────────────────────────
+
 
 def _check_timeout(user_id: int) -> None:
     last = _last_active.get(user_id)
@@ -87,15 +142,3 @@ def clear_history(user_id: int) -> None:
 
 def get_all_user_ids() -> list[int]:
     return list(_history.keys())
-
-
-def register_user(user_id: int) -> bool:
-    """Register a user. Returns True if this is a new user, False if already known."""
-    if user_id in _known_users:
-        return False
-    _known_users.add(user_id)
-    return True
-
-
-def get_user_count() -> int:
-    return len(_known_users)
