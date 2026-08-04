@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import signal
 import threading
 
 from flask import Flask, jsonify
@@ -31,6 +32,10 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
+def start_flask(port: int) -> None:
+    flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
+
+
 async def post_init(application) -> None:
     await application.bot.set_my_commands(BOT_COMMANDS)
     scheduler = create_scheduler(application.bot)
@@ -45,21 +50,33 @@ async def run_bot_async() -> None:
     )
     register_handlers(application)
 
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def _handle_signal(signum, frame):
+        logger.info(f"Signal {signum} received, stopping bot...")
+        loop.call_soon_threadsafe(stop_event.set)
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     async with application:
         await application.start()
         await application.updater.start_polling(drop_pending_updates=True)
         logger.info("Sikomor is running.")
-        await asyncio.sleep(float("inf"))
+        await stop_event.wait()
+        logger.info("Stopping updater and application...")
+        await application.updater.stop()
+        await application.stop()
 
-
-def bot_thread() -> None:
-    asyncio.run(run_bot_async())
+    logger.info("Bot shut down cleanly.")
 
 
 if __name__ == "__main__":
-    t = threading.Thread(target=bot_thread, daemon=True)
-    t.start()
-
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Flask health server starting on port {port}")
-    flask_app.run(host="0.0.0.0", port=port)
+    flask_thread = threading.Thread(target=start_flask, args=(port,), daemon=True)
+    flask_thread.start()
+
+    # Bot runs on main thread so signal handlers work correctly
+    asyncio.run(run_bot_async())
