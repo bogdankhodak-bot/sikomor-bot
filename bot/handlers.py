@@ -10,9 +10,8 @@ from telegram.ext import (
     Application,
 )
 from .claude_client import get_reply
-from .storage import add_message, get_history, clear_history, register_user, get_user_count
+from .storage import add_message, get_history, clear_history, register_user, get_user_count, subscribe, unsubscribe, is_subscribed
 from .quotes import get_random_quote
-from .scheduler import subscribe, unsubscribe, is_subscribed
 
 logger = logging.getLogger(__name__)
 
