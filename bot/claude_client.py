@@ -46,11 +46,13 @@ async def get_reply(history: list[dict], user_message: str) -> str:
     return await _generate_with_retry(messages)
 
 
-async def get_morning_reflection(quote_text: str, quote_source: str) -> str:
+async def get_morning_message() -> str:
     prompt = (
-        f"Сегодняшнее утреннее слово: «{quote_text}» — {quote_source}.\n\n"
-        "Напиши короткое (3–5 предложений) живое размышление об этом слове — "
-        "как оно может коснуться человека, который живёт далеко от родины и ищет опору в вере. "
-        "Не цитируй богословов, говори тепло и лично. Заверши одним мягким вопросом к читателю."
+        "Напиши короткое утреннее сообщение — ровно 2–3 предложения — которое помогает человеку "
+        "увидеть Бога в обычных моментах сегодняшнего дня. "
+        "Говори тепло и лично, без религиозного пафоса. "
+        "Не используй заголовки, вступления или подписи — только само сообщение. "
+        "Не задавай вопросов. Каждый раз пиши по-новому, не повторяй одни и те же образы."
     )
-    return await _generate_with_retry([{"role": "user", "content": prompt}])
+    text = await _generate_with_retry([{"role": "user", "content": prompt}])
+    return f"🌅 {text}"
