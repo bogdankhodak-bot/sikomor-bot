@@ -1,23 +1,27 @@
 """Sikomor — spiritual companion Telegram bot + Flask health server."""
 
 import asyncio
+import datetime
 import logging
 import os
 import signal
 import threading
+from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify
 from telegram.ext import ApplicationBuilder
 
-from bot.config import TELEGRAM_BOT_TOKEN
+from bot.config import TELEGRAM_BOT_TOKEN, MORNING_HOUR, MORNING_MINUTE
 from bot.handlers import register_handlers, BOT_COMMANDS
-from bot.scheduler import create_scheduler
+from bot.scheduler import morning_job, summary_job
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 flask_app = Flask(__name__)
 
@@ -38,15 +42,33 @@ def start_flask(port: int) -> None:
 
 async def post_init(application) -> None:
     await application.bot.set_my_commands(BOT_COMMANDS)
-    scheduler = create_scheduler(application.bot)
-    scheduler.start()
-    logger.info("Scheduler started — morning messages at 08:00 Moscow time")
+
+    jq = application.job_queue
+
+    jq.run_daily(
+        morning_job,
+        time=datetime.time(hour=MORNING_HOUR, minute=MORNING_MINUTE, tzinfo=MOSCOW_TZ),
+        name="morning_message",
+    )
+    jq.run_daily(
+        summary_job,
+        time=datetime.time(hour=9, minute=0, tzinfo=MOSCOW_TZ),
+        name="daily_summary",
+    )
+
+    logger.info(
+        f"Jobs scheduled: morning at {MORNING_HOUR:02d}:{MORNING_MINUTE:02d} Moscow, "
+        "summary at 09:00 Moscow"
+    )
 
 
 async def run_bot_async() -> None:
     logger.info("Starting Sikomor bot...")
     application = (
-        ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(post_init)
+        .build()
     )
     register_handlers(application)
 
