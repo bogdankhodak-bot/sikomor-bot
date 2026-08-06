@@ -55,16 +55,25 @@ async def post_init(application) -> None:
         time=datetime.time(hour=9, minute=0, tzinfo=MOSCOW_TZ),
         name="daily_summary",
     )
+
+    # Compute a concrete first-run datetime so the job fires today at 21:30 Moscow
+    # regardless of when the bot was last started. If 21:30 has already passed today,
+    # it will fire at 21:30 three days from now (same cadence, no silent skip).
+    now_moscow = datetime.datetime.now(MOSCOW_TZ)
+    first_reminder = now_moscow.replace(hour=21, minute=30, second=0, microsecond=0)
+    if first_reminder <= now_moscow:
+        first_reminder += datetime.timedelta(days=3)
+
     jq.run_repeating(
         reminder_job,
         interval=datetime.timedelta(days=3),
-        first=datetime.time(hour=21, minute=0, tzinfo=MOSCOW_TZ),
+        first=first_reminder,
         name="reminder",
     )
 
     logger.info(
         f"Jobs scheduled: morning at {MORNING_HOUR:02d}:{MORNING_MINUTE:02d} Moscow, "
-        "summary at 09:00 Moscow, reminder every 3 days at 21:00 Moscow"
+        f"summary at 09:00 Moscow, reminder first at {first_reminder.strftime('%Y-%m-%d %H:%M')} Moscow then every 3 days"
     )
 
 
@@ -90,6 +99,14 @@ async def run_bot_async() -> None:
 
     async with application:
         await application.start()
+        # Force-close any existing long-poll session from a previous instance.
+        # Calling get_updates with timeout=0 immediately terminates whatever
+        # getUpdates connection Telegram is holding for this token, so the new
+        # instance can start polling without racing against the old one.
+        try:
+            await application.bot.get_updates(offset=-1, timeout=0)
+        except Exception:
+            pass
         await application.updater.start_polling(drop_pending_updates=True)
         logger.info("Sikomor is running.")
         await stop_event.wait()
