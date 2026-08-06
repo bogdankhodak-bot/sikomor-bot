@@ -13,7 +13,7 @@ from telegram.ext import ApplicationBuilder
 
 from bot.config import TELEGRAM_BOT_TOKEN, MORNING_HOUR, MORNING_MINUTE
 from bot.handlers import register_handlers, BOT_COMMANDS
-from bot.scheduler import morning_job, summary_job
+from bot.scheduler import morning_job, summary_job, reminder_job
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -55,10 +55,16 @@ async def post_init(application) -> None:
         time=datetime.time(hour=9, minute=0, tzinfo=MOSCOW_TZ),
         name="daily_summary",
     )
+    jq.run_repeating(
+        reminder_job,
+        interval=datetime.timedelta(days=3),
+        first=datetime.time(hour=21, minute=0, tzinfo=MOSCOW_TZ),
+        name="reminder",
+    )
 
     logger.info(
         f"Jobs scheduled: morning at {MORNING_HOUR:02d}:{MORNING_MINUTE:02d} Moscow, "
-        "summary at 09:00 Moscow"
+        "summary at 09:00 Moscow, reminder every 3 days at 21:00 Moscow"
     )
 
 
