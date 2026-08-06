@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 ADMIN_ID = 552279910
 
 _pourout_waiting: set[int] = set()
+_pray_waiting: set[int] = set()
 
 POUROUT_RESPONSES = [
     "Я слышал. Это настоящее. Иди.",
@@ -48,7 +49,8 @@ WELCOME_MESSAGE = """Привет. Я — Сикомор 🌿
 Просто напиши мне — я слушаю.
 
 *Команды:*
-/morning — включить утренние слова (цитата + размышление каждое утро)
+/morning — Компас дня (утреннее слово каждое утро)
+/pray — попросить помолиться за кого-то
 /quote — получить цитату прямо сейчас
 /pourout — выговориться без масок и осуждения
 /new — начать разговор заново
@@ -59,7 +61,8 @@ HELP_MESSAGE = """*Сикомор — духовный собеседник*
 Просто напиши мне всё, что у тебя на душе — я отвечу.
 
 *Команды:*
-/morning — подписаться на утренние слова (или отписаться)
+/morning — Компас дня — подписаться / отписаться
+/pray — попросить помолиться за кого-то
 /quote — цитата из Писания или Святых Отцов
 /pourout — выговориться без масок и осуждения
 /new — очистить историю и начать заново
@@ -77,7 +80,7 @@ async def _track_user(user_id: int, bot) -> None:
         try:
             await bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"🌿 Новый пользователь! Всего: {count}",
+                text=f"🌿 Новый пользователь! Всего за всё время: {count}",
             )
         except Exception as e:
             logger.error(f"Failed to notify admin of new user: {e}")
@@ -101,15 +104,25 @@ async def morning_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if is_subscribed(user_id):
         unsubscribe(user_id)
         await update.message.reply_text(
-            "Ты отписался от утренних слов. Если захочешь вернуться — просто напиши /morning снова."
+            "Ты отписался от Компаса дня. Если захочешь вернуться — просто напиши /morning снова."
         )
     else:
         subscribe(user_id)
         await update.message.reply_text(
             "Отлично 🌿 Каждое утро в 8:00 по московскому времени я буду присылать тебе "
-            "слово из Писания или Святых Отцов и короткое размышление.\n\n"
+            "Компас дня — цитату из Евангелия и вопрос для размышления.\n\n"
             "Можно отписаться командой /morning."
         )
+
+
+async def pray_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    await _track_user(user_id, context.bot)
+    _pray_waiting.add(user_id)
+    await update.message.reply_text(
+        "За кого хотите помолиться сегодня? Напишите имя — и если хотите, ситуацию. "
+        "Богдан (он сделал Сикомора) помолится за вас сегодня."
+    )
 
 
 async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -133,6 +146,7 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _track_user(user_id, context.bot)
     clear_history(user_id)
     _pourout_waiting.discard(user_id)
+    _pray_waiting.discard(user_id)
     await update.message.reply_text(
         "Хорошо. Начнём с чистого листа 🌿\n\nО чём хочешь поговорить?"
     )
@@ -143,6 +157,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_text = update.message.text
 
     await _track_user(user_id, context.bot)
+
+    if user_id in _pray_waiting:
+        _pray_waiting.discard(user_id)
+        await update.message.reply_text(
+            "Отправил Богдану. Он помолится сегодня. "
+            "И вы тоже можете — прямо сейчас, своими словами."
+        )
+        try:
+            username = update.effective_user.username
+            sender = f"@{username}" if username else f"id{user_id}"
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🙏 Просьба о молитве от {sender}:\n\n{user_text}",
+            )
+        except Exception as e:
+            logger.error(f"Failed to forward prayer request to admin: {e}")
+        return
 
     if user_id in _pourout_waiting:
         _pourout_waiting.discard(user_id)
@@ -171,6 +202,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("morning", morning_command))
+    app.add_handler(CommandHandler("pray", pray_command))
     app.add_handler(CommandHandler("quote", quote_command))
     app.add_handler(CommandHandler("pourout", pourout_command))
     app.add_handler(CommandHandler("new", new_command))
@@ -178,7 +210,8 @@ def register_handlers(app: Application) -> None:
 
 
 BOT_COMMANDS = [
-    BotCommand("morning", "Утренние слова — подписаться / отписаться"),
+    BotCommand("morning", "Компас дня — подписаться / отписаться"),
+    BotCommand("pray", "Попросить помолиться за кого-то"),
     BotCommand("quote", "Цитата из Писания или Святых Отцов"),
     BotCommand("pourout", "Выговориться — без масок, без осуждения"),
     BotCommand("new", "Начать разговор заново"),
