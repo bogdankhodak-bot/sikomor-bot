@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 ADMIN_ID = 552279910
 
-_pourout_waiting: set[int] = set()
-_pray_waiting: set[int] = set()
+# State is stored in context.user_data['waiting'] per user (PTB-idiomatic)
+# Values: 'pray' | 'pourout' | None
 
 POUROUT_RESPONSES = [
     "Я слышал. Это настоящее. Иди.",
@@ -118,7 +118,7 @@ async def morning_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def pray_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     await _track_user(user_id, context.bot)
-    _pray_waiting.add(user_id)
+    context.user_data['waiting'] = 'pray'
     await update.message.reply_text(
         "За кого хотите помолиться сегодня? Напишите имя — и если хотите, ситуацию. "
         "Богдан (он сделал Сикомора) помолится за вас сегодня."
@@ -135,7 +135,7 @@ async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def pourout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     await _track_user(user_id, context.bot)
-    _pourout_waiting.add(user_id)
+    context.user_data['waiting'] = 'pourout'
     await update.message.reply_text(
         "Здесь можно сказать всё. Без масок, без осуждения. Просто напиши что внутри — я слушаю."
     )
@@ -145,8 +145,7 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     await _track_user(user_id, context.bot)
     clear_history(user_id)
-    _pourout_waiting.discard(user_id)
-    _pray_waiting.discard(user_id)
+    context.user_data.pop('waiting', None)
     await update.message.reply_text(
         "Хорошо. Начнём с чистого листа 🌿\n\nО чём хочешь поговорить?"
     )
@@ -158,8 +157,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await _track_user(user_id, context.bot)
 
-    if user_id in _pray_waiting:
-        _pray_waiting.discard(user_id)
+    waiting = context.user_data.pop('waiting', None)
+
+    if waiting == 'pray':
         await update.message.reply_text(
             "Отправил Богдану. Он помолится сегодня. "
             "И вы тоже можете — прямо сейчас, своими словами."
@@ -175,8 +175,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.error(f"Failed to forward prayer request to admin: {e}")
         return
 
-    if user_id in _pourout_waiting:
-        _pourout_waiting.discard(user_id)
+    if waiting == 'pourout':
         await update.message.reply_text(random.choice(POUROUT_RESPONSES))
         return
 
