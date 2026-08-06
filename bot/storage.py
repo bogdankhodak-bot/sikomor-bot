@@ -55,6 +55,11 @@ def get_user_count() -> int:
     return len(_known_users)
 
 
+def get_all_known_users() -> list[int]:
+    """Return all users who have ever interacted with the bot."""
+    return list(_known_users)
+
+
 def get_today_new_count() -> int:
     return _today_new_count
 
