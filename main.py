@@ -9,7 +9,8 @@ import threading
 from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify
-from telegram.ext import ApplicationBuilder
+from telegram.error import Conflict
+from telegram.ext import ApplicationBuilder, ContextTypes
 
 from bot.config import TELEGRAM_BOT_TOKEN, MORNING_HOUR, MORNING_MINUTE
 from bot.handlers import register_handlers, BOT_COMMANDS
@@ -70,6 +71,12 @@ async def post_init(application) -> None:
         first=first_reminder,
         name="reminder",
     )
+    jq.run_repeating(
+        scheduler_health_job,
+        interval=datetime.timedelta(minutes=5),
+        first=datetime.timedelta(seconds=30),
+        name="scheduler_health",
+    )
 
     logger.info(
         f"Jobs scheduled: morning at {MORNING_HOUR:02d}:{MORNING_MINUTE:02d} Moscow, "
@@ -77,7 +84,17 @@ async def post_init(application) -> None:
     )
 
 
-async def run_bot_async() -> None:
+async def scheduler_health_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Prove periodically that the JobQueue is alive and report next runs."""
+    jobs = context.application.job_queue.jobs()
+    next_runs = ", ".join(
+        f"{job.name}={job.next_t.isoformat() if job.next_t else 'none'}"
+        for job in jobs
+    )
+    logger.info("JOBQUEUE HEARTBEAT: running; %d jobs; next runs: %s", len(jobs), next_runs)
+
+
+def run_bot() -> None:
     logger.info("Starting Sikomor bot...")
     application = (
         ApplicationBuilder()
@@ -86,34 +103,26 @@ async def run_bot_async() -> None:
         .build()
     )
     register_handlers(application)
-
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-
-    def _handle_signal(signum, frame):
-        logger.info(f"Signal {signum} received, stopping bot...")
-        loop.call_soon_threadsafe(stop_event.set)
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-
-    async with application:
-        await application.start()
-        # Force-close any existing long-poll session from a previous instance.
-        # Calling get_updates with timeout=0 immediately terminates whatever
-        # getUpdates connection Telegram is holding for this token, so the new
-        # instance can start polling without racing against the old one.
-        try:
-            await application.bot.get_updates(offset=-1, timeout=0)
-        except Exception:
-            pass
-        await application.updater.start_polling(drop_pending_updates=True)
-        logger.info("Sikomor is running.")
-        await stop_event.wait()
-        logger.info("Stopping updater and application...")
-        await application.updater.stop()
-        await application.stop()
-
+    logger.info(
+        "Starting PTB run_polling lifecycle; post_init will register "
+        "the Telegram menu and all JobQueue jobs before polling begins"
+    )
+    # PTB's supported lifecycle guarantees this order:
+    # initialize -> post_init -> start polling -> start application.
+    # In particular, post_init is invoked automatically and JobQueue starts
+    # before the process begins waiting for Telegram updates.
+    try:
+        application.run_polling(
+            drop_pending_updates=True,
+            stop_signals=(signal.SIGINT, signal.SIGTERM),
+            close_loop=True,
+        )
+    except Conflict:
+        logger.critical(
+            "Telegram polling conflict: another process is using this bot token. "
+            "Stopping this instance instead of retrying indefinitely."
+        )
+        raise
     logger.info("Bot shut down cleanly.")
 
 
@@ -123,5 +132,5 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=start_flask, args=(port,), daemon=True)
     flask_thread.start()
 
-    # Bot runs on main thread so signal handlers work correctly
-    asyncio.run(run_bot_async())
+    # Bot runs on main thread so PTB's signal handlers work correctly.
+    run_bot()
