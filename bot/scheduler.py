@@ -30,6 +30,7 @@ REMINDERS = [
 
 async def morning_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send the daily morning message to all subscribers."""
+    logger.info("JOB FIRED: morning_compass")
     subscribers = get_all_subscribers()
     if not subscribers:
         logger.info("Morning job fired — no subscribers, skipping")
@@ -61,6 +62,7 @@ async def morning_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def summary_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send daily stats summary to admin."""
+    logger.info("JOB FIRED: daily_summary")
     today_new = get_today_new_count()
     total = get_user_count()
     reset_today_count()
@@ -79,6 +81,7 @@ async def summary_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a random reminder to all known users every 3 days."""
+    logger.info("JOB FIRED: reminder")
     users = get_all_known_users()
     if not users:
         logger.info("Reminder job fired — no users, skipping")
